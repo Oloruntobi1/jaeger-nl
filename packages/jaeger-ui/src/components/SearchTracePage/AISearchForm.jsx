@@ -1,8 +1,10 @@
 import * as React from 'react';
-import { Input, Button, Form, Typography } from 'antd';
+import { Input, Button, Form, Typography, Select } from 'antd';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
 import { bindActionCreators } from 'redux';
+import store from 'store';
+import SearchableSelect from '../common/SearchableSelect';
 import * as jaegerApiActions from '../../actions/jaeger-api';
 import { DEFAULT_LIMIT } from '../../constants/search-form';
 import { submitForm } from './SearchForm';
@@ -20,8 +22,18 @@ const EXAMPLE_QUERIES = [
 export class AISearchFormImpl extends React.PureComponent {
   constructor(props) {
     super(props);
+    // Get last used service
+    const lastSearch = store.get('lastSearch');
+    let lastSearchService;
+    if (lastSearch && lastSearch.service && lastSearch.service !== '-') {
+      if (props.services.some(s => s.name === lastSearch.service)) {
+        lastSearchService = lastSearch.service;
+      }
+    }
+
     this.state = {
       query: '',
+      selectedService: lastSearchService,
       isTranslating: false,
       translatedQuery: null,
       error: null,
@@ -32,18 +44,27 @@ export class AISearchFormImpl extends React.PureComponent {
     this.setState({ query: e.target.value });
   };
 
+  handleServiceChange = (value) => {
+    this.setState({ selectedService: value });
+  };
+
   handleExampleClick = (example) => {
     this.setState({ query: example });
   };
 
   handleSubmit = async (e) => {
     e.preventDefault();
-    const { query } = this.state;
+    const { query, selectedService } = this.state;
     
     this.setState({ isTranslating: true });
     
     try {
-      const translatedQuery = await aiTranslationService.translateQuery(query);
+      const translatedQuery = await aiTranslationService.translateQuery(query, {
+        selectedService,
+      });
+
+      translatedQuery.service = selectedService;
+
       this.setState({ 
         isTranslating: false,
         translatedQuery,
@@ -59,8 +80,9 @@ export class AISearchFormImpl extends React.PureComponent {
   };
 
   render() {
-    const { query, isTranslating, translatedQuery, error } = this.state;
-    const { submitting } = this.props;
+    const { query, selectedService, isTranslating, translatedQuery, error } = this.state;
+    const { submitting, services } = this.props;
+    const noSelectedService = !selectedService;
 
     return (
       <div className="AISearchForm">
@@ -68,9 +90,32 @@ export class AISearchFormImpl extends React.PureComponent {
           <Form.Item
             label={
               <span>
+                Service <span className="SearchForm--labelCount">({services.length})</span>
+              </span>
+            }
+            required
+          >
+            <SearchableSelect
+              value={selectedService}
+              onChange={this.handleServiceChange}
+              placeholder="Select a service"
+              style={{ width: '100%' }}
+              disabled={submitting || isTranslating}
+            >
+              {services.map(service => (
+                <Select.Option key={service.name} value={service.name}>
+                  {service.name}
+                </Select.Option>
+              ))}
+            </SearchableSelect>
+          </Form.Item>
+
+          <Form.Item
+            label={
+              <span>
                 Natural Language Query
                 <Text type="secondary" style={{ marginLeft: 8 }}>
-                  (describe what you're looking for in plain English)
+                  (describe what you're looking for)
                 </Text>
               </span>
             }
@@ -120,7 +165,8 @@ export class AISearchFormImpl extends React.PureComponent {
             type="primary"
             htmlType="submit"
             loading={submitting || isTranslating}
-            disabled={!query.trim()}
+            disabled={!query.trim() || noSelectedService}
+            data-test="ai-search-submit"
           >
             Search Traces
           </Button>
@@ -133,6 +179,12 @@ export class AISearchFormImpl extends React.PureComponent {
 AISearchFormImpl.propTypes = {
   submitting: PropTypes.bool,
   submitFormHandler: PropTypes.func.isRequired,
+  services: PropTypes.arrayOf(
+    PropTypes.shape({
+      name: PropTypes.string,
+      operations: PropTypes.arrayOf(PropTypes.string),
+    })
+  ).isRequired,
 };
 
 AISearchFormImpl.defaultProps = {
@@ -146,4 +198,14 @@ export function mapDispatchToProps(dispatch) {
   };
 }
 
-export default connect(null, mapDispatchToProps)(AISearchFormImpl); 
+export function mapStateToProps(state) {
+  const services = state.services.services || [];
+  return {
+    services: services.map(name => ({ name }))
+  };
+}
+
+export default connect(
+  mapStateToProps,
+  mapDispatchToProps
+)(AISearchFormImpl); 
