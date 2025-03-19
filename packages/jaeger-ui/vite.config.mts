@@ -21,7 +21,7 @@ import { visualizer } from 'rollup-plugin-visualizer';
 import path from 'path';
 
 const proxyConfig = {
-  target: 'http://localhost:16686',
+  target: 'http://host.docker.internal:16686',
   secure: false,
   changeOrigin: true,
   ws: true,
